@@ -2,6 +2,7 @@ import * as React from 'react';
 import dbManager, { Tag, TagGroupAssignment } from '../../utils/IndexedDBManager';
 import { ChromeMessageTypes } from '../../types/ChromeMessageTypes';
 import { WhatsAppGroup } from '../../types/ChromeMessageContentTypes';
+import { Edit, Trash2, RefreshCw, Save, Tag as TagIcon } from 'lucide-react';
 
 const TAG_COLORS = [
   '#EF4444', '#F59E0B', '#10B981', '#3B82F6', '#6366F1', 
@@ -26,6 +27,9 @@ interface CreateTagsState {
   savedGroupIds: Set<string>; // Actually saved in DB
   searchQuery: string;
   hasUnsavedChanges: boolean;
+  isEditMode: boolean; // Whether we're in edit mode for group assignments
+  retryCount: number; // Number of retry attempts
+  isWaitingForWhatsApp: boolean; // Whether we're waiting for WhatsApp to be ready
 }
 
 /**
@@ -53,16 +57,62 @@ class CreateTags extends React.Component<{}, CreateTagsState> {
       savedGroupIds: new Set(),
       searchQuery: '',
       hasUnsavedChanges: false,
+      isEditMode: false,
+      retryCount: 0,
+      isWaitingForWhatsApp: false,
     };
+    
+    // Retry timer reference
+    this.retryTimer = null;
+    this.wppReadyListener = null;
   }
+
+  private retryTimer: NodeJS.Timeout | null = null;
+  private wppReadyListener: ((event: MessageEvent) => void) | null = null;
 
   async componentDidMount() {
     await dbManager.init();
     await this.loadTags();
-    await this.loadGroups();
     await this.loadAssignments();
+    
+    // Set up WPP ready listener
+    this.setupWPPReadyListener();
+    
+    // Try to load groups (will auto-retry if WPP not ready)
+    await this.loadGroups();
+    
     this.setState({ isLoading: false });
   }
+
+  componentWillUnmount() {
+    // Clean up listeners and timers
+    if (this.retryTimer) {
+      clearTimeout(this.retryTimer);
+      this.retryTimer = null;
+    }
+    if (this.wppReadyListener) {
+      window.removeEventListener('message', this.wppReadyListener);
+      this.wppReadyListener = null;
+    }
+  }
+
+  /**
+   * Set up listener for WPP ready events
+   * When WPP becomes ready, automatically retry loading groups
+   */
+  setupWPPReadyListener = () => {
+    this.wppReadyListener = (event: MessageEvent) => {
+      // Listen for WPP ready events from wa-js.ts
+      if (event.source === window && event.data?.type === 'WPP_READY') {
+        console.log('[CreateTags] WPP is now ready, retrying group load...');
+        if (this.state.groups.length === 0 && !this.state.isLoadingGroups) {
+          this.setState({ retryCount: 0, isWaitingForWhatsApp: false });
+          this.loadGroups(true);
+        }
+      }
+    };
+    window.addEventListener('message', this.wppReadyListener);
+  };
 
   /**
    * Load all tags from IndexedDB
@@ -75,8 +125,9 @@ class CreateTags extends React.Component<{}, CreateTagsState> {
   /**
    * Fetch WhatsApp groups from the page context via window messaging
    * Uses WPPConnect API injected in wa-js.ts
+   * Includes auto-retry mechanism with exponential backoff
    */
-  loadGroups = async (showLoading: boolean = false) => {
+  loadGroups = async (showLoading: boolean = false, isRetry: boolean = false) => {
     if (showLoading) {
       this.setState({ isLoadingGroups: true, groupsLoadError: null });
     }
@@ -88,26 +139,67 @@ class CreateTags extends React.Component<{}, CreateTagsState> {
         this.setState({ 
           groups: groups, 
           isLoadingGroups: false, 
-          groupsLoadError: null 
+          groupsLoadError: null,
+          retryCount: 0,
+          isWaitingForWhatsApp: false,
         });
         console.log('[CreateTags] Successfully loaded', groups.length, 'groups');
+        
+        // Clear any pending retry
+        if (this.retryTimer) {
+          clearTimeout(this.retryTimer);
+          this.retryTimer = null;
+        }
       } else {
         const errorMsg = 'No groups found. Make sure you are logged into WhatsApp Web and have groups.';
         console.warn('[CreateTags]', errorMsg);
         this.setState({ 
           groups: [], 
           isLoadingGroups: false, 
-          groupsLoadError: errorMsg
+          groupsLoadError: errorMsg,
+          isWaitingForWhatsApp: false,
         });
       }
     } catch (error) {
       console.error('[CreateTags] Failed to load WhatsApp groups:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Failed to load groups. Please try again.';
-      this.setState({ 
-        groups: [], 
-        isLoadingGroups: false, 
-        groupsLoadError: errorMessage
-      });
+      const errorMessage = error instanceof Error ? error.message : 'Failed to load groups.';
+      
+      // Check if error indicates WPP is not ready
+      const isWPPNotReady = errorMessage.includes('WPPConnect is not loaded') || 
+                           errorMessage.includes('WPP not found') ||
+                           errorMessage.includes('WPP ready timeout') ||
+                           errorMessage.includes('not available');
+      
+      if (isWPPNotReady && this.state.retryCount < 5) {
+        // Auto-retry with exponential backoff
+        const retryCount = this.state.retryCount + 1;
+        const delay = Math.min(1000 * Math.pow(2, retryCount), 10000); // Max 10 seconds
+        
+        console.log(`[CreateTags] WPP not ready, will retry in ${delay}ms (attempt ${retryCount}/5)`);
+        
+        this.setState({ 
+          isLoadingGroups: false,
+          groupsLoadError: null, // Don't show error, show waiting state instead
+          retryCount: retryCount,
+          isWaitingForWhatsApp: true,
+        });
+        
+        // Schedule retry
+        if (this.retryTimer) {
+          clearTimeout(this.retryTimer);
+        }
+        this.retryTimer = setTimeout(() => {
+          this.loadGroups(true, true);
+        }, delay);
+      } else {
+        // Max retries reached or different error
+        this.setState({ 
+          groups: [], 
+          isLoadingGroups: false, 
+          groupsLoadError: errorMessage,
+          isWaitingForWhatsApp: false,
+        });
+      }
     }
   };
 
@@ -245,7 +337,12 @@ class CreateTags extends React.Component<{}, CreateTagsState> {
    * Select a tag and load its assigned groups
    */
   handleSelectTag = async (tagId: string) => {
-    this.setState({ selectedTagId: tagId, hasUnsavedChanges: false });
+    this.setState({ 
+      selectedTagId: tagId, 
+      hasUnsavedChanges: false,
+      isEditMode: false, // Reset to read-only mode when selecting a tag
+      searchQuery: '', // Clear search when selecting a tag
+    });
     
     // Reload groups if empty (in case they weren't loaded initially)
     if (this.state.groups.length === 0) {
@@ -297,6 +394,29 @@ class CreateTags extends React.Component<{}, CreateTagsState> {
   };
 
   /**
+   * Enter edit mode to add/remove groups from a tag
+   */
+  handleEditGroups = () => {
+    this.setState({ 
+      isEditMode: true,
+      searchQuery: '', // Clear search when entering edit mode
+    });
+  };
+
+  /**
+   * Cancel edit mode and discard unsaved changes
+   */
+  handleCancelEdit = () => {
+    // Reset to saved state
+    this.setState({ 
+      isEditMode: false,
+      selectedGroupIds: new Set(this.state.savedGroupIds),
+      hasUnsavedChanges: false,
+      searchQuery: '', // Clear search when canceling
+    });
+  };
+
+  /**
    * Save all pending group assignments to the database
    */
   handleSaveGroups = async () => {
@@ -325,7 +445,9 @@ class CreateTags extends React.Component<{}, CreateTagsState> {
       await this.loadAssignments();
       this.setState({ 
         savedGroupIds: new Set(selectedGroupIds),
-        hasUnsavedChanges: false
+        hasUnsavedChanges: false,
+        isEditMode: false, // Exit edit mode after saving
+        searchQuery: '', // Clear search after saving
       });
     } catch (error) {
       console.error('Failed to save groups:', error);
@@ -371,6 +493,14 @@ class CreateTags extends React.Component<{}, CreateTagsState> {
     return groups.filter(g => g.name.toLowerCase().includes(query));
   };
 
+  /**
+   * Get assigned groups for the selected tag (read-only mode)
+   */
+  getAssignedGroups = (): WhatsAppGroup[] => {
+    const { groups, savedGroupIds } = this.state;
+    return groups.filter(g => savedGroupIds.has(g.id));
+  };
+
   render() {
     const {
       tags,
@@ -388,6 +518,9 @@ class CreateTags extends React.Component<{}, CreateTagsState> {
       searchQuery,
       assignments,
       hasUnsavedChanges,
+      isEditMode,
+      isWaitingForWhatsApp,
+      retryCount,
     } = this.state;
 
     if (isLoading) {
@@ -399,6 +532,7 @@ class CreateTags extends React.Component<{}, CreateTagsState> {
     }
 
     const filteredGroups = this.getFilteredGroups();
+    const assignedGroups = this.getAssignedGroups();
     const selectedTag = tags.find(t => t.id === selectedTagId);
     const tagToDeleteObj = tags.find(t => t.id === tagToDelete);
 
@@ -455,7 +589,7 @@ class CreateTags extends React.Component<{}, CreateTagsState> {
                           className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
                           title="Edit"
                         >
-                          ✏️
+                          <Edit size={16} className="text-gray-600 dark:text-gray-400" />
                         </button>
                         <button
                           onClick={(e) => {
@@ -465,7 +599,7 @@ class CreateTags extends React.Component<{}, CreateTagsState> {
                           className="p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded"
                           title="Delete"
                         >
-                          🗑️
+                          <Trash2 size={16} className="text-red-600 dark:text-red-400" />
                         </button>
                       </div>
                     </div>
@@ -481,15 +615,19 @@ class CreateTags extends React.Component<{}, CreateTagsState> {
           <div className="mt-6">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-                Assign Groups to "{selectedTag.name}"
+                {isEditMode 
+                  ? `Assign Groups to "${selectedTag.name}"`
+                  : `Groups in "${selectedTag.name}"`
+                }
               </h3>
-              {this.state.groups.length === 0 && !this.state.isLoadingGroups && (
+              {this.state.groups.length === 0 && !isLoadingGroups && (
                 <button
                   onClick={() => this.loadGroups(true)}
-                  className="text-xs text-green-600 dark:text-green-400 hover:underline"
+                  className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400 hover:underline"
                   title="Reload groups"
                 >
-                  🔄 Reload
+                  <RefreshCw size={14} />
+                  Reload
                 </button>
               )}
             </div>
@@ -501,82 +639,145 @@ class CreateTags extends React.Component<{}, CreateTagsState> {
               </div>
             )}
 
+            {/* Waiting for WhatsApp State */}
+            {this.state.isWaitingForWhatsApp && !this.state.isLoadingGroups && (
+              <div className="mb-3 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                <div className="flex items-center gap-2 mb-2">
+                  <RefreshCw size={16} className="text-blue-600 dark:text-blue-400 animate-spin" />
+                  <p className="text-xs text-blue-600 dark:text-blue-400 font-medium">
+                    Waiting for WhatsApp Web to load...
+                  </p>
+                </div>
+                <p className="text-xs text-blue-500 dark:text-blue-300">
+                  Retrying in a moment... (Attempt {this.state.retryCount}/5)
+                </p>
+                <button
+                  onClick={() => {
+                    this.setState({ retryCount: 0, isWaitingForWhatsApp: false });
+                    this.loadGroups(true);
+                  }}
+                  className="mt-2 text-xs text-blue-600 dark:text-blue-400 hover:underline font-medium"
+                >
+                  Retry Now
+                </button>
+              </div>
+            )}
+
             {/* Error State */}
-            {this.state.groupsLoadError && !this.state.isLoadingGroups && (
+            {this.state.groupsLoadError && !this.state.isLoadingGroups && !this.state.isWaitingForWhatsApp && (
               <div className="mb-3 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
                 <p className="text-xs text-red-600 dark:text-red-400 mb-2">
                   {this.state.groupsLoadError}
                 </p>
                 <button
-                  onClick={() => this.loadGroups(true)}
+                  onClick={() => {
+                    this.setState({ retryCount: 0, isWaitingForWhatsApp: false });
+                    this.loadGroups(true);
+                  }}
                   className="text-xs text-red-600 dark:text-red-400 hover:underline font-medium"
                 >
                   Try Again
                 </button>
               </div>
             )}
-            
-            {/* Search */}
-            {this.state.groups.length > 0 && (
-              <input
-                type="text"
-                placeholder="Search groups..."
-                value={searchQuery}
-                onChange={(e) => this.setState({ searchQuery: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg mb-3 text-sm dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
-              />
-            )}
 
-            {/* Groups List */}
-            {!this.state.isLoadingGroups && (
-              <div className="space-y-1 max-h-96 overflow-y-auto">
-                {filteredGroups.length === 0 ? (
-                  <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-4">
-                    {searchQuery ? 'No groups found' : this.state.groupsLoadError ? 'Failed to load groups' : 'No WhatsApp groups available'}
-                  </p>
+            {/* READ-ONLY MODE: Show only assigned groups */}
+            {!isEditMode && !isLoadingGroups && (
+              <>
+                {assignedGroups.length === 0 ? (
+                  <div className="mb-4">
+                    <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-4">
+                      No groups assigned to this tag yet.
+                    </p>
+                  </div>
                 ) : (
-                  filteredGroups.map(group => (
-                    <label
-                      key={group.id}
-                      className="flex items-center gap-2 p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded cursor-pointer"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selectedGroupIds.has(group.id)}
-                        onChange={() => this.handleToggleGroup(group.id)}
-                        className="w-4 h-4 cursor-pointer"
-                      />
-                      <span className="text-sm text-gray-700 dark:text-gray-300">
-                        {group.name}
-                      </span>
-                    </label>
-                  ))
+                  <div className="space-y-1 max-h-96 overflow-y-auto mb-4">
+                    {assignedGroups.map(group => (
+                      <div
+                        key={group.id}
+                        className="flex items-center gap-2 p-2 bg-gray-50 dark:bg-gray-800 rounded"
+                      >
+                        <span className="text-sm text-gray-700 dark:text-gray-300">
+                          {group.name}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 )}
-              </div>
-            )}
-
-            {/* Save Button - Only show when there are unsaved changes */}
-            {this.state.hasUnsavedChanges && (
-              <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                
+                {/* Edit Button */}
                 <button
-                  onClick={this.handleSaveGroups}
-                  className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors shadow-md"
+                  onClick={this.handleEditGroups}
+                  className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors shadow-md"
                 >
-                  💾 Save Groups ({selectedGroupIds.size} selected)
+                  <Edit size={18} />
+                  Edit Groups
                 </button>
-                <p className="text-xs text-gray-500 dark:text-gray-400 text-center mt-2">
-                  Changes will be saved to this tag
-                </p>
-              </div>
+              </>
             )}
 
-            {/* Saved indicator */}
-            {!this.state.hasUnsavedChanges && this.state.selectedGroupIds.size > 0 && (
-              <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-                <p className="text-xs text-green-600 dark:text-green-400 text-center">
-                  ✓ {this.state.selectedGroupIds.size} group(s) saved to this tag
-                </p>
-              </div>
+            {/* EDIT MODE: Show all groups with checkboxes */}
+            {isEditMode && !isLoadingGroups && (
+              <>
+                {/* Search - Only shown in edit mode */}
+                {this.state.groups.length > 0 && (
+                  <input
+                    type="text"
+                    placeholder="Search groups..."
+                    value={searchQuery}
+                    onChange={(e) => this.setState({ searchQuery: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg mb-3 text-sm dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                  />
+                )}
+
+                {/* Groups List with Checkboxes */}
+                <div className="space-y-1 max-h-96 overflow-y-auto">
+                  {filteredGroups.length === 0 ? (
+                    <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-4">
+                      {searchQuery ? 'No groups found' : this.state.groupsLoadError ? 'Failed to load groups' : 'No WhatsApp groups available'}
+                    </p>
+                  ) : (
+                    filteredGroups.map(group => (
+                      <label
+                        key={group.id}
+                        className="flex items-center gap-2 p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedGroupIds.has(group.id)}
+                          onChange={() => this.handleToggleGroup(group.id)}
+                          className="w-4 h-4 cursor-pointer"
+                        />
+                        <span className="text-sm text-gray-700 dark:text-gray-300">
+                          {group.name}
+                        </span>
+                      </label>
+                    ))
+                  )}
+                </div>
+
+                {/* Action Buttons */}
+                <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700 space-y-2">
+                  {/* Save Button - Show when there are unsaved changes */}
+                  {this.state.hasUnsavedChanges && (
+                    <button
+                      onClick={this.handleSaveGroups}
+                      className="w-full flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors shadow-md"
+                    >
+                      <Save size={18} />
+                      Save Groups ({selectedGroupIds.size} selected)
+                    </button>
+                  )}
+                  
+                  {/* Cancel Button */}
+                  <button
+                    onClick={this.handleCancelEdit}
+                    className="w-full bg-gray-500 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </>
             )}
           </div>
         )}

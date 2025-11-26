@@ -2,6 +2,7 @@ import React, { ChangeEvent, Component, DragEvent } from 'react';
 import Button from '../atoms/Button';
 import { ControlInput, ControlSelect } from '../atoms/ControlFactory';
 import Box from '../molecules/Box';
+import { X } from 'lucide-react';
 
 export default class MessageButtonsForm extends Component<{ className?: string }, { buttons: { id: number, type: string, value: string, text: string }[], draggedIndex: number | null, dropIndex: number | null }>{
     constructor(props: { className?: string }) {
@@ -233,10 +234,10 @@ export default class MessageButtonsForm extends Component<{ className?: string }
                                 </td>
                                 <td className="border text-center align-middle">
                                     <Button
-                                        className="text-3xl text-red-500 hover:text-red-600 dark:hover:text-red-400 p-0 ring-0"
+                                        className="text-red-500 hover:text-red-600 dark:hover:text-red-400 p-1 ring-0"
                                         onClick={() => this.handleDeleteButton(button.id)}
                                     >
-                                        ×
+                                        <X size={20} />
                                     </Button>
                                 </td>
                             </tr>
