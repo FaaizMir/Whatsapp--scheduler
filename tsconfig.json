@@ -1,0 +1,26 @@
+{
+    "compilerOptions": {
+        "target": "ES2020",
+        "lib": ["ES2020", "DOM"],
+        "module": "ESNext",
+        "baseUrl": "./src",
+        "jsx": "react-jsx",
+        "moduleResolution": "Node",
+        "noEmit": false,
+        "noFallthroughCasesInSwitch": true,
+        "outDir": "./dist/js",
+        "esModuleInterop": true,
+        "allowSyntheticDefaultImports": true,
+        "strict": false,
+        "skipLibCheck": true,
+        "resolveJsonModule": true,
+        "types": ["chrome", "node"]
+    },
+    "display": "Wppconnect",
+    "exclude": [
+        "node_modules"
+    ],
+    "include": [
+        "./src"
+    ]
+}

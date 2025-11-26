@@ -1,0 +1,46 @@
+{
+  "name": "wppconnect",
+  "version": "1.0.0",
+  "description": "Wppconnect Chrome Extension that allows you to send messages in bulk via WhatsApp™ Web",
+  "main": "index.js",
+  "scripts": {
+    "watch": "webpack --config webpack/webpack.dev.js --watch --progress",
+    "dev": "tsc --noEmit && webpack --config webpack/webpack.dev.js",
+    "build": "tsc --noEmit && webpack --config webpack/webpack.prod.js",
+    "clean": "rimraf dist"
+  },
+  "author": "wppconnect-team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wppconnect-team/wppconnect-extension.git"
+  },
+  "dependencies": {
+    "@wppconnect/wa-js": "^3.8.1",
+    "git": "^0.1.5",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.35.1",
+    "@tsconfig/recommended": "^1.0.6",
+    "@types/chrome": "^0.0.239",
+    "@types/node": "^20.12.8",
+    "@types/react": "^18.2.14",
+    "@types/react-dom": "^18.2.6",
+    "autoprefixer": "^10.4.14",
+    "copy-webpack-plugin": "^11.0.0",
+    "css-loader": "^6.8.1",
+    "cssnano": "^6.0.1",
+    "postcss-loader": "^7.3.3",
+    "qrcode-terminal": "^0.12.0",
+    "rimraf": "^5.0.1",
+    "speed-measure-webpack-plugin": "^1.5.0",
+    "style-loader": "^3.3.3",
+    "tailwindcss": "^3.3.2",
+    "ts-loader": "^9.4.4",
+    "typescript": "^5.1.5",
+    "webpack-cli": "^5.1.4",
+    "webpack-merge": "^5.9.0"
+  }
+}

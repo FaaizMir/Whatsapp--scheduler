@@ -1,0 +1,63 @@
+{
+  "manifest_version": 3,
+  "name": "WhatsApp Scheduler",
+  "version": "1.0.6",
+  "description": "__MSG_appDesc__",
+  "author": "wppconnect-team",
+  "default_locale": "en",
+  "content_scripts": [
+    {
+      "js": [
+        "js/content_script.js"
+      ],
+      "matches": [
+        "https://web.whatsapp.com/*"
+      ],
+      "run_at": "document_start"
+    },
+    {
+      "js": [
+        "js/sidebar.js"
+      ],
+      "css": [],
+      "matches": [
+        "https://web.whatsapp.com/*"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "js": [
+        "js/wa-js.js"
+      ],
+      "matches": [
+        "https://web.whatsapp.com/*"
+      ],
+      "world": "MAIN"
+    }
+  ],
+  "externally_connectable": {
+    "matches": ["https://web.whatsapp.com/*"]
+  },
+  "homepage_url": "https://github.com/wppconnect-team/wppconnect-extension",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "notifications",
+    "alarms"
+  ],
+  "short_name": "Wppconnect",
+  "storage": {
+    "managed_schema": "schema.json"
+  },
+  "web_accessible_resources": [
+    {
+      "matches": [
+        "https://web.whatsapp.com/*"
+      ],
+      "resources": [
+        "js/wa-js.js",
+        "js/wppconnect.js"
+      ]
+    }
+  ]
+}
