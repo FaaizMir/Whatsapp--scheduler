@@ -348,4 +348,10 @@ WPP.webpack?.onInjected(() => {
     console.log('Wppconnect: Loader injected!');
 });
 
+WPP.webpack?.onReady(() => {
+    console.log('Wppconnect: WPP is ready!');
+    // Broadcast WPP ready event to content scripts
+    window.postMessage({ type: 'WPP_READY' }, window.location.origin);
+});
+
 WPP.webpack?.injectLoader();

@@ -19,6 +19,7 @@ import './index.css';
 import CreateTags from './components/organisms/CreateTags';
 import ScheduleMessages from './components/organisms/ScheduleMessages';
 import ScheduledMessagesList from './components/organisms/ScheduledMessagesList';
+import { ChevronLeft, ChevronRight, Tag, Calendar, List } from 'lucide-react';
 
 interface SidebarState {
   activeView: 'create-tags' | 'schedule-messages' | 'scheduled-messages';
@@ -68,10 +69,10 @@ class Sidebar extends React.Component<{}, SidebarState> {
         {/* Minimize/Maximize Button */}
         <button
           onClick={this.toggleMinimize}
-          className="absolute -left-10 top-4 bg-green-600 hover:bg-green-700 text-white p-2 rounded-l-lg shadow-lg transition-colors"
+          className="absolute -left-10 top-4 bg-green-600 hover:bg-green-700 text-white p-2 rounded-l-lg shadow-lg transition-colors flex items-center justify-center"
           title={isMinimized ? 'Expand Scheduler' : 'Minimize Scheduler'}
         >
-          {isMinimized ? '◀' : '▶'}
+          {isMinimized ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
         </button>
 
         {!isMinimized && (
@@ -86,33 +87,36 @@ class Sidebar extends React.Component<{}, SidebarState> {
             <div className="flex border-b border-gray-200 dark:border-gray-700">
               <button
                 onClick={() => this.setActiveView('create-tags')}
-                className={`flex-1 py-3 px-2 text-sm font-medium transition-colors ${
+                className={`flex-1 flex items-center justify-center gap-1.5 py-3 px-2 text-sm font-medium transition-colors ${
                   activeView === 'create-tags'
                     ? 'bg-green-50 dark:bg-gray-700 text-green-600 dark:text-green-400 border-b-2 border-green-600'
                     : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
                 }`}
               >
-                🏷️ Tags
+                <Tag size={16} />
+                Tags
               </button>
               <button
                 onClick={() => this.setActiveView('schedule-messages')}
-                className={`flex-1 py-3 px-2 text-sm font-medium transition-colors ${
+                className={`flex-1 flex items-center justify-center gap-1.5 py-3 px-2 text-sm font-medium transition-colors ${
                   activeView === 'schedule-messages'
                     ? 'bg-green-50 dark:bg-gray-700 text-green-600 dark:text-green-400 border-b-2 border-green-600'
                     : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
                 }`}
               >
-                ✏️ Schedule
+                <Calendar size={16} />
+                Schedule
               </button>
               <button
                 onClick={() => this.setActiveView('scheduled-messages')}
-                className={`flex-1 py-3 px-2 text-sm font-medium transition-colors ${
+                className={`flex-1 flex items-center justify-center gap-1.5 py-3 px-2 text-sm font-medium transition-colors ${
                   activeView === 'scheduled-messages'
                     ? 'bg-green-50 dark:bg-gray-700 text-green-600 dark:text-green-400 border-b-2 border-green-600'
                     : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
                 }`}
               >
-                📋 Scheduled
+                <List size={16} />
+                Scheduled
               </button>
             </div>
 
@@ -151,7 +155,7 @@ function injectSidebar() {
       const root = createRoot(sidebarContainer);
       root.render(<Sidebar />);
 
-      console.log('✅ WhatsApp Scheduler Sidebar injected successfully');
+      console.log('WhatsApp Scheduler Sidebar injected successfully');
     }
   }, 500);
 

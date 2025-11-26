@@ -2,6 +2,7 @@ import React, { Component, MouseEvent } from 'react';
 import type Log from '../../types/Log';
 import Button from '../atoms/Button';
 import Box from '../molecules/Box';
+import { Check, X } from 'lucide-react';
 
 export default class LogTable extends Component<{ className?: string }, { logs: Log[] }>{
     constructor(props: { className?: string }) {
@@ -68,7 +69,13 @@ export default class LogTable extends Component<{ className?: string }, { logs: 
                         <tr key={index} className={logLevelClass[log.level]}>
                             <td className="border px-4 py-2">{log.contact}</td>
                             <td className="border px-4 py-2">{log.message}</td>
-                            <td className="border px-4 py-2 text-center">{log.attachment ? '✓' : '×'}</td>
+                            <td className="border px-4 py-2 text-center">
+                              {log.attachment ? (
+                                <Check size={18} className="text-green-600 dark:text-green-400 mx-auto" />
+                              ) : (
+                                <X size={18} className="text-gray-400 dark:text-gray-500 mx-auto" />
+                              )}
+                            </td>
                             <td className="border px-4 py-2">{log.date}</td>
                         </tr>
                     ))}
